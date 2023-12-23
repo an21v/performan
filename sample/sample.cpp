@@ -22,7 +22,6 @@ struct SampleGame {
 			while (run)
 			{
 				PM_SCOPED_FRAME();
-
 				_updateStart = std::chrono::steady_clock::now();
 
 				{
