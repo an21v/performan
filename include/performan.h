@@ -6,15 +6,15 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include <shared_mutex>
+#include <mutex>
 #include <ratio>
 #include <vector>
 #include <thread>
 
 ////////////////////////////////// API //////////////////////////////////
 	
-#define PM_THREAD() Performan::Thread pmThread;
-#define PM_SCOPED_FRAME() Performan::FrameScope pmFrameScope(pmThread);
+#define PM_THREAD() Performan::SoftPtr<Performan::Thread> pmThread = Performan::Profiler::GetInstance()->AddThread();
+#define PM_SCOPED_FRAME() Performan::FrameScope pmFrameScope(*pmThread);
 #define PM_SCOPED_EVENT(name) Performan::EventScope pmEventScope(pmFrameScope._frame, name);
 
 namespace Performan {
@@ -59,33 +59,24 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 
 	DefaultAllocator& GetDefaultAllocator();
 
-	////////////////////////////////// Profiler //////////////////////////////////
+	////////////////////////////////// Utilities //////////////////////////////////
 
-	class Profiler {
-	public:
-		// Singleton
-		static void CreateInstance();
-		static void DestroyInstance();
-		static Profiler* GetInstance();
+	// Memory you do not own, do not attempt to delete it.
+	template <class T>
+	struct SoftPtr
+	{
+		SoftPtr() = default;
+		SoftPtr(T* ptr) : _ptr(ptr) {}
 
-	public:
-		void SetAllocator(Allocator* allocator);
-		Allocator* GetAllocator() const;
+		bool operator==(const SoftPtr& rhs) const { return *this == *rhs; }
+		bool operator<(const SoftPtr& rhs) const { return *this < *rhs; }
 
-
-	private:
-		Profiler() = default;
-		Profiler(const Profiler&) = delete;
-		void operator=(const Profiler&) = delete;
-
-	private:
-		mutable std::shared_mutex _threadDescriptionMtx;
-		mutable std::shared_mutex _eventDescriptionMtx;
-
-		Allocator* _allocator = nullptr;
-
-		inline static Profiler* _instance = nullptr;
+		T* operator->() const { return _ptr; }
+		T& operator*() const { return *_ptr; }
+		T* _ptr = nullptr;
 	};
+
+	////////////////////////////////// Profiler //////////////////////////////////
 
 	using PortableNano = std::chrono::duration<int64_t, std::nano>;
 	using PortableTimePoint = std::chrono::time_point<std::chrono::steady_clock, PortableNano>;
@@ -178,6 +169,35 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 
 		std::reference_wrapper<Thread> _thread;
 		Frame _frame;
+	};
+
+	class Profiler {
+	public:
+		// Singleton
+		static void CreateInstance();
+		static void DestroyInstance();
+		static Profiler* GetInstance();
+
+	public:
+		void SetAllocator(Allocator* allocator);
+		Allocator* GetAllocator() const;
+
+		SoftPtr<Thread> AddThread();
+		void RemoveThread(SoftPtr<Thread> thread);
+
+	private:
+		Profiler() = default;
+		~Profiler();
+		Profiler(const Profiler&) = delete;
+		void operator=(const Profiler&) = delete;
+
+	private:
+		std::vector<Thread*> _threads;
+		mutable std::mutex _threadsMtx;
+
+		Allocator* _allocator = nullptr;
+
+		inline static Profiler* _instance = nullptr;
 	};
 
 	////////////////////////////////// Serialization //////////////////////////////////

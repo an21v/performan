@@ -48,7 +48,6 @@ struct SampleGame {
 					run = _running.load();
 				}
 			}	
-			pmThread.Print();
 		});
 
 		t.join();
@@ -65,12 +64,12 @@ struct SampleGame {
 
 int main() {
     Performan::Profiler::CreateInstance();
+	Performan::Profiler::GetInstance()->SetAllocator(&Performan::GetDefaultAllocator());
 
 	SampleGame game;
 
 	game.Initialize();
 	game.Run();
-    Performan::Profiler::GetInstance()->
 
     Performan::Profiler::DestroyInstance();
 }

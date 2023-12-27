@@ -1,5 +1,6 @@
 #include "../include/performan.h"
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 
@@ -69,8 +70,39 @@ namespace Performan {
 		if (_allocator) {
 			return _allocator;
 		}
-		
+
 		return &(GetDefaultAllocator());
+	}
+
+	SoftPtr<Thread> Profiler::AddThread()
+	{
+		// Dynamically allocate thread
+		Thread* th = PERFORMAN_NEW(*_allocator, Thread);
+
+		{
+			std::scoped_lock lock(_threadsMtx);
+			_threads.push_back(th);
+		}
+
+		return { th };
+	}
+
+	void Profiler::RemoveThread(SoftPtr<Thread> thread)
+	{
+		std::scoped_lock lock(_threadsMtx);
+		auto itFound = std::find_if(_threads.begin(), _threads.end(), [thread](const auto* other) { return other == thread._ptr; });
+
+		if (itFound != _threads.end())
+		{
+			_threads.erase(itFound);
+		}
+	}
+
+	Profiler::~Profiler()
+	{
+		for (auto* thread : _threads) {
+			delete thread;
+		}
 	}
 
 	////////////////////////////////// Serialization //////////////////////////////////
@@ -97,7 +129,7 @@ namespace Performan {
 	{
 		// 1. Reallocate new internal buffer
 		constexpr size_t firstAllocDefaultSize = 1024; // 1024 bytes (1KB)
-		
+
 		size_t allocSize = _size > 0 ? _size * 2 : firstAllocDefaultSize;
 		uint8_t* buf = (uint8_t*)PERFORMAN_ALLOCATE(*_allocator, allocSize);
 
@@ -119,7 +151,7 @@ namespace Performan {
 	{
 		_size = 0;
 		_offset = 0;
-		
+
 		delete[] _buffer;
 		_buffer = nullptr;
 	}
