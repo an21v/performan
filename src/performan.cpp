@@ -6,168 +6,168 @@
 
 namespace Performan {
 
-	////////////////////////////////// Assertion //////////////////////////////////
+    ////////////////////////////////// Assertion //////////////////////////////////
 
-	void PerformanSetAssertFunction(void(*function)(const char*, const char*, const char*, int))
-	{
-		PerformanAssertFunction = function;
-	}
+    void PerformanSetAssertFunction(void(*function)(const char*, const char*, const char*, int))
+    {
+        PerformanAssertFunction = function;
+    }
 
-	void PerformanDefaultAssertHandler(const char* condition, const char* function, const char* file, int line)
-	{
+    void PerformanDefaultAssertHandler(const char* condition, const char* function, const char* file, int line)
+    {
 #if defined( _MSC_VER )
-		__debugbreak();
+        __debugbreak();
 #endif
-	}
+    }
 
-	void (*PerformanAssertFunction)(const char*, const char*, const char* file, int line) = PerformanDefaultAssertHandler;
+    void (*PerformanAssertFunction)(const char*, const char*, const char* file, int line) = PerformanDefaultAssertHandler;
 
-	////////////////////////////////// Allocator //////////////////////////////////
+    ////////////////////////////////// Allocator //////////////////////////////////
 
-	void* DefaultAllocator::Allocate(std::size_t size)
-	{
-		return malloc(size);
-	}
+    void* DefaultAllocator::Allocate(std::size_t size)
+    {
+        return malloc(size);
+    }
 
-	void DefaultAllocator::Free(void* ptr)
-	{
-		free(ptr);
-	}
+    void DefaultAllocator::Free(void* ptr)
+    {
+        free(ptr);
+    }
 
-	DefaultAllocator& GetDefaultAllocator()
-	{
-		static DefaultAllocator allocator;
-		return allocator;
-	}
+    DefaultAllocator& GetDefaultAllocator()
+    {
+        static DefaultAllocator allocator;
+        return allocator;
+    }
 
-	////////////////////////////////// Profiler //////////////////////////////////
+    ////////////////////////////////// Profiler //////////////////////////////////
 
-	void Profiler::CreateInstance()
-	{
-		PERFORMAN_ASSERT(_instance == nullptr);
-		_instance = PERFORMAN_NEW(GetDefaultAllocator(), Profiler); // Pass user provided allocator
-	}
+    void Profiler::CreateInstance()
+    {
+        PERFORMAN_ASSERT(_instance == nullptr);
+        _instance = PERFORMAN_NEW(GetDefaultAllocator(), Profiler); // Pass user provided allocator
+    }
 
-	void Profiler::DestroyInstance()
-	{
-		PERFORMAN_ASSERT(_instance != nullptr);
-		PERFORMAN_DELETE(GetDefaultAllocator(), Profiler, _instance); // Pass user provided allocator
-	}
+    void Profiler::DestroyInstance()
+    {
+        PERFORMAN_ASSERT(_instance != nullptr);
+        PERFORMAN_DELETE(GetDefaultAllocator(), Profiler, _instance); // Pass user provided allocator
+    }
 
-	Profiler* Profiler::GetInstance()
-	{
-		PERFORMAN_ASSERT(_instance != nullptr);
-		return _instance;
-	}
+    Profiler* Profiler::GetInstance()
+    {
+        PERFORMAN_ASSERT(_instance != nullptr);
+        return _instance;
+    }
 
-	void Profiler::SetAllocator(Allocator* allocator)
-	{
-		_allocator = allocator;
-	}
+    void Profiler::SetAllocator(Allocator* allocator)
+    {
+        _allocator = allocator;
+    }
 
-	Allocator* Profiler::GetAllocator() const
-	{
-		if (_allocator) {
-			return _allocator;
-		}
+    Allocator* Profiler::GetAllocator() const
+    {
+        if (_allocator) {
+            return _allocator;
+        }
 
-		return &(GetDefaultAllocator());
-	}
+        return &(GetDefaultAllocator());
+    }
 
-	SoftPtr<Thread> Profiler::AddThread()
-	{
-		// Dynamically allocate thread
-		Thread* th = PERFORMAN_NEW(*_allocator, Thread);
+    SoftPtr<Thread> Profiler::AddThread()
+    {
+        // Dynamically allocate thread
+        Thread* th = PERFORMAN_NEW(*_allocator, Thread);
 
-		{
-			std::scoped_lock lock(_threadsMtx);
-			_threads.push_back(th);
-		}
+        {
+            std::scoped_lock lock(_threadsMtx);
+            _threads.push_back(th);
+        }
 
-		return { th };
-	}
+        return { th };
+    }
 
-	void Profiler::RemoveThread(SoftPtr<Thread> thread)
-	{
-		std::scoped_lock lock(_threadsMtx);
-		auto itFound = std::find_if(_threads.begin(), _threads.end(), [thread](const auto* other) { return other == thread._ptr; });
+    void Profiler::RemoveThread(SoftPtr<Thread> thread)
+    {
+        std::scoped_lock lock(_threadsMtx);
+        auto itFound = std::find_if(_threads.begin(), _threads.end(), [thread](const auto* other) { return other == thread._ptr; });
 
-		if (itFound != _threads.end())
-		{
-			_threads.erase(itFound);
-		}
-	}
+        if (itFound != _threads.end())
+        {
+            _threads.erase(itFound);
+        }
+    }
 
-	Profiler::~Profiler()
-	{
-		for (auto* thread : _threads) {
-			delete thread;
-		}
-	}
+    Profiler::~Profiler()
+    {
+        for (auto* thread : _threads) {
+            delete thread;
+        }
+    }
 
-	////////////////////////////////// Serialization //////////////////////////////////
+    ////////////////////////////////// Serialization //////////////////////////////////
 
-	Stream::Stream(Allocator* allocator)
-		: _allocator(allocator)
-	{
-	}
+    Stream::Stream(Allocator* allocator)
+        : _allocator(allocator)
+    {
+    }
 
-	Stream::Stream(Allocator* allocator, uint8_t* buffer, size_t size)
-		: _allocator(allocator)
-		, _size(size)
-	{
-		_buffer = (uint8_t*)PERFORMAN_ALLOCATE(*_allocator, size);
-		memcpy(_buffer, buffer, size);
-	}
+    Stream::Stream(Allocator* allocator, uint8_t* buffer, size_t size)
+        : _allocator(allocator)
+        , _size(size)
+    {
+        _buffer = (uint8_t*)PERFORMAN_ALLOCATE(*_allocator, size);
+        memcpy(_buffer, buffer, size);
+    }
 
-	Stream::~Stream()
-	{
-		Clear();
-	}
+    Stream::~Stream()
+    {
+        Clear();
+    }
 
-	void Stream::Resize()
-	{
-		// 1. Reallocate new internal buffer
-		constexpr size_t firstAllocDefaultSize = 1024; // 1024 bytes (1KB)
+    void Stream::Resize()
+    {
+        // 1. Reallocate new internal buffer
+        constexpr size_t firstAllocDefaultSize = 1024; // 1024 bytes (1KB)
 
-		size_t allocSize = _size > 0 ? _size * 2 : firstAllocDefaultSize;
-		uint8_t* buf = (uint8_t*)PERFORMAN_ALLOCATE(*_allocator, allocSize);
+        size_t allocSize = _size > 0 ? _size * 2 : firstAllocDefaultSize;
+        uint8_t* buf = (uint8_t*)PERFORMAN_ALLOCATE(*_allocator, allocSize);
 
-		// 2. Copy previous buffer data
-		if (_buffer) {
-			memcpy(buf, _buffer, _size);
-		}
+        // 2. Copy previous buffer data
+        if (_buffer) {
+            memcpy(buf, _buffer, _size);
+        }
 
-		_size = allocSize;
+        _size = allocSize;
 
-		// 3. Swap internal buffer & delete previous
-		uint8_t* prevBuf = _buffer;
-		_buffer = buf;
+        // 3. Swap internal buffer & delete previous
+        uint8_t* prevBuf = _buffer;
+        _buffer = buf;
 
-		delete[] prevBuf;
-	}
+        delete[] prevBuf;
+    }
 
-	void Stream::Clear()
-	{
-		_size = 0;
-		_offset = 0;
+    void Stream::Clear()
+    {
+        _size = 0;
+        _offset = 0;
 
-		delete[] _buffer;
-		_buffer = nullptr;
-	}
+        delete[] _buffer;
+        _buffer = nullptr;
+    }
 
-	void WriteStream::SerializeBytes(void* value, size_t size)
-	{
-		if (_size - _offset < size) {
-			Resize();
-		}
-		memcpy(&_buffer[_offset], value, size);
-		_offset += size;
-	}
+    void WriteStream::SerializeBytes(void* value, size_t size)
+    {
+        if (_size - _offset < size) {
+            Resize();
+        }
+        memcpy(&_buffer[_offset], value, size);
+        _offset += size;
+    }
 
-	void ReadStream::SerializeBytes(void* value, size_t size)
-	{
-		memcpy(value, &_buffer[_offset], size);
-		_offset += size;
-	}
+    void ReadStream::SerializeBytes(void* value, size_t size)
+    {
+        memcpy(value, &_buffer[_offset], size);
+        _offset += size;
+    }
 }
