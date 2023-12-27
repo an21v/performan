@@ -44,13 +44,13 @@ namespace Performan {
 	void Profiler::CreateInstance()
 	{
 		PERFORMAN_ASSERT(_instance == nullptr);
-		_instance = PERFORMAN_NEW(GetDefaultAllocator(), Profiler); // User provided allocator
+		_instance = PERFORMAN_NEW(GetDefaultAllocator(), Profiler); // Pass user provided allocator
 	}
 
 	void Profiler::DestroyInstance()
 	{
 		PERFORMAN_ASSERT(_instance != nullptr);
-		PERFORMAN_DELETE(GetDefaultAllocator(), Profiler, _instance); // User provided allocator
+		PERFORMAN_DELETE(GetDefaultAllocator(), Profiler, _instance); // Pass user provided allocator
 	}
 
 	Profiler* Profiler::GetInstance()
@@ -71,29 +71,6 @@ namespace Performan {
 		}
 		
 		return &(GetDefaultAllocator());
-	}
-
-	void PM_Event::Print() const
-	{
-		std::cout << "\t\t[ Name: " << _name << ", Start: " << _start.time_since_epoch() << ", End: " << _end.time_since_epoch() << "]\n";
-	}
-
-	void PM_Frame::Print() const
-	{
-		std::cout << "\tEvents:\n";
-		for (const PM_Event& event : _events)
-		{
-			event.Print();
-		}
-	}
-
-	void PM_Thread::Print() const
-	{
-		std::cout << "Frames:\n";
-		for (const PM_Frame& frame : _frames)
-		{
-			frame.Print();
-		}
 	}
 
 	////////////////////////////////// Serialization //////////////////////////////////
@@ -147,15 +124,7 @@ namespace Performan {
 		_buffer = nullptr;
 	}
 
-	void WriteStream::SerializeInt64(int64_t& value) {
-		if (_size - _offset < sizeof(int64_t)) {
-			Resize();
-		}
-		memcpy(&_buffer[_offset], &value, sizeof(int64_t));
-		_offset += sizeof(int64_t);
-	}
-
-	void WriteStream::SerializeBytes(uint8_t* value, size_t size)
+	void WriteStream::SerializeBytes(void* value, size_t size)
 	{
 		if (_size - _offset < size) {
 			Resize();
@@ -164,13 +133,7 @@ namespace Performan {
 		_offset += size;
 	}
 
-	void ReadStream::SerializeInt64(int64_t& value)
-	{
-		memcpy(&value, &_buffer[_offset], sizeof(int64_t));
-		_offset += sizeof(int64_t);
-	}
-
-	void ReadStream::SerializeBytes(uint8_t* value, size_t size)
+	void ReadStream::SerializeBytes(void* value, size_t size)
 	{
 		memcpy(value, &_buffer[_offset], size);
 		_offset += size;

@@ -7,16 +7,19 @@
 #include <cstdint>
 #include <functional>
 #include <shared_mutex>
+#include <ratio>
 #include <vector>
 #include <thread>
 
 ////////////////////////////////// API //////////////////////////////////
 	
-#define PM_THREAD() Performan::PM_Thread pmThread;
-#define PM_SCOPED_FRAME() Performan::PM_FrameScope pmFrameScope(pmThread);
-#define PM_SCOPED_EVENT(name) Performan::PM_EventScope pmEventScope(pmFrameScope._frame, name);
+#define PM_THREAD() Performan::Thread pmThread;
+#define PM_SCOPED_FRAME() Performan::FrameScope pmFrameScope(pmThread);
+#define PM_SCOPED_EVENT(name) Performan::EventScope pmEventScope(pmFrameScope._frame, name);
 
 namespace Performan {
+
+#define PERFORMAN_SERIALIZE(stream, ptr, size) (stream).SerializeBytes(static_cast<void*>(ptr), size)
 
 	////////////////////////////////// Assertion //////////////////////////////////
 
@@ -25,16 +28,16 @@ extern void (*PerformanAssertFunction)(const char*, const char*, const char* fil
 #define PERFORMAN_STATIC_ASSERT(condition) static_assert(condition)
 #define PERFORMAN_STATIC_ASSERT_MESSAGE(condition, msg) static_assert(condition, msg)
 
-#define PERFORMAN_ASSERT(condition)                                                         \
-do                                                                                          \
-{                                                                                           \
-    if ( !(condition) )                                                                     \
-    {                                                                                       \
-		PerformanAssertFunction( #condition, __FUNCTION__, __FILE__, __LINE__ );            \
-    }                                                                                       \
-} while(0)
+#define PERFORMAN_ASSERT(condition)                                            \
+do                                                                             \
+{                                                                              \
+    if (!(condition))                                                          \
+    {                                                                          \
+        PerformanAssertFunction(#condition, __FUNCTION__, __FILE__, __LINE__); \
+    }                                                                          \
+} while (0)
 
-void PerformanSetAssertFunction(void (*function)(const char* /*condition*/, const char* /*function*/, const char* /*file*/, int /*line*/));
+void PerformanSetAssertFunction(void (*function)(const char* condition, const char* function, const char* file, int line));
 static void PerformanDefaultAssertHandler(const char* condition, const char* function, const char* file, int line);
 
 	////////////////////////////////// Allocator //////////////////////////////////
@@ -57,15 +60,6 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 	DefaultAllocator& GetDefaultAllocator();
 
 	////////////////////////////////// Profiler //////////////////////////////////
-	
-	struct ThreadDescription {
-		const char* name;
-		std::thread::id id;
-	};
-
-	struct EventDescription {
-		const char* name;
-	};
 
 	class Profiler {
 	public:
@@ -77,7 +71,6 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 	public:
 		void SetAllocator(Allocator* allocator);
 		Allocator* GetAllocator() const;
-
 
 
 	private:
@@ -94,60 +87,97 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 		inline static Profiler* _instance = nullptr;
 	};
 
-	struct PM_Event {
-		PM_Event(const char* name)
+	using PortableNano = std::chrono::duration<int64_t, std::nano>;
+	using PortableTimePoint = std::chrono::time_point<std::chrono::steady_clock, PortableNano>;
+
+	struct Event {
+		Event() = default;
+		Event(const char* name)
 			: _name(name) {}
 
 		const char* _name;
-		std::chrono::time_point<std::chrono::steady_clock> _start;
-		std::chrono::time_point<std::chrono::steady_clock> _end;
+		PortableTimePoint _start;
+		PortableTimePoint _end;
 
-		void Print() const;
+        template <class Stream>
+		void Serialize(Stream& stream)
+        {
+			int64_t startCount = 0;
+			int64_t endCount = 0;
+			int32_t nameLength = 0;
+			char* name = nullptr;
+
+            if constexpr (Stream::IsWriting)
+            {
+				startCount = _start.time_since_epoch().count();
+				endCount = _end.time_since_epoch().count();
+				nameLength = strlen(_name);
+				nameLength += 1;
+				name = const_cast<char*>(_name);
+            }
+
+			PERFORMAN_SERIALIZE(stream, &startCount, sizeof(int64_t));
+			PERFORMAN_SERIALIZE(stream, &endCount, sizeof(int64_t));
+			PERFORMAN_SERIALIZE(stream, &nameLength, sizeof(int32_t));
+
+			if constexpr (Stream::IsReading)
+			{
+				PortableNano startDuration(startCount);
+				PortableNano endDuration(endCount);
+				_start = PortableTimePoint(startDuration);
+				_end = PortableTimePoint(endDuration);
+				name = new char[nameLength];
+				name[nameLength - 1] = '\0';
+			}
+
+			PERFORMAN_SERIALIZE(stream, name, nameLength);
+
+			if constexpr (Stream::IsReading)
+			{
+				_name = name;
+			}
+        }
 	};
 
-	struct PM_Frame {
-		std::vector<PM_Event> _events;
-
-		void Print() const;
+	struct Frame {
+		std::vector<Event> _events;
 	};
 
-	struct PM_Thread {
-		std::vector<PM_Frame> _frames;
-
-		void Print() const;
+	struct Thread {
+		std::vector<Frame> _frames;
 	};
 	
-	struct PM_EventScope {
-		PM_EventScope(PM_Frame& frame, const char* name)
+	struct EventScope {
+		EventScope(Frame& frame, const char* name)
 			: _frame(frame)
 			, _event(name)
 		{
 			_event._start = std::chrono::steady_clock::now();
 		}
 
-		~PM_EventScope() {
+		~EventScope() {
 			_event._end = std::chrono::steady_clock::now();
 			_frame.get()._events.push_back(std::move(_event));
 		}
 
-		std::reference_wrapper<PM_Frame> _frame;
-		PM_Event _event;
+		std::reference_wrapper<Frame> _frame;
+		Event _event;
 	};
 
-	struct PM_FrameScope {
-		PM_FrameScope(PM_Thread& thread)
+	struct FrameScope {
+		FrameScope(Thread& thread)
 			:_thread(thread)
 		{
 			// init frame start
 		}
 
-		~PM_FrameScope()
+		~FrameScope()
 		{
 			_thread.get()._frames.push_back(_frame);
 		}
 
-		std::reference_wrapper<PM_Thread> _thread;
-		PM_Frame _frame;
+		std::reference_wrapper<Thread> _thread;
+		Frame _frame;
 	};
 
 	////////////////////////////////// Serialization //////////////////////////////////
@@ -186,8 +216,7 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 		WriteStream(Allocator* allocator)
 			: Stream(allocator) {}
 
-		void SerializeInt64(int64_t& value);
-		void SerializeBytes(uint8_t* value, size_t size);
+		void SerializeBytes(void* value, size_t size);
 	};
 
 	class ReadStream : public Stream {
@@ -206,8 +235,7 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 		ReadStream(Allocator* allocator, uint8_t* buffer, size_t size)
 			: Stream(allocator, buffer, size) {}
 
-		void SerializeInt64(int64_t& value);
-		void SerializeBytes(uint8_t* value, size_t size);
+		void SerializeBytes(void* value, size_t size);
 	};
 }
 

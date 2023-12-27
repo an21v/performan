@@ -21,14 +21,9 @@ protected:
 	}
 };
 
-
-TEST_F(PerformanTest, TestSampleOne) {
-	EXPECT_EQ(true, true);
-}
-
 TEST_F(PerformanTest, TestEventName) {
 	constexpr const char* evtName = "evt";
-	Performan::PM_Event evt(evtName);
+	Performan::Event evt(evtName);
 	EXPECT_EQ(evt._name, evtName);
 }
 
@@ -82,46 +77,64 @@ TEST_F(PerformanTest, TestResizeDataCorruption) {
 	EXPECT_EQ(stream.Data()[3], 'o');
 }
 
-TEST_F(PerformanTest, TestWriteStreamSerializeInt64Min) {
+TEST_F(PerformanTest, TestStreamSerializeInt64Min) {
 	Performan::Allocator& allocator = Performan::GetDefaultAllocator();
 	Performan::WriteStream wStream(&allocator);
 
 	int64_t valueToSerialize = INT64_MIN;
-	wStream.SerializeInt64(valueToSerialize);
+	PERFORMAN_SERIALIZE(wStream, &valueToSerialize, sizeof(int64_t));
 
 	int64_t valueToDeserialize = 0;
 	Performan::ReadStream rStream(&allocator, wStream.Data(), wStream.Size());
-	rStream.SerializeInt64(valueToDeserialize);
+	PERFORMAN_SERIALIZE(rStream, &valueToDeserialize, sizeof(int64_t));
 
 	EXPECT_EQ(valueToSerialize, valueToDeserialize);
 
 }
 
-TEST_F(PerformanTest, TestWriteStreamSerializeInt64Max) {
+TEST_F(PerformanTest, TestStreamSerializeInt64Max) {
 	Performan::Allocator& allocator = Performan::GetDefaultAllocator();
 	Performan::WriteStream wStream(&allocator);
 
 	int64_t valueToSerialize = INT64_MAX;
-	wStream.SerializeInt64(valueToSerialize);
+    PERFORMAN_SERIALIZE(wStream, &valueToSerialize, sizeof(int64_t));
 
 	int64_t valueToDeserialize = 0;
 	Performan::ReadStream rStream(&allocator, wStream.Data(), wStream.Size());
-	rStream.SerializeInt64(valueToDeserialize);
+	PERFORMAN_SERIALIZE(rStream, &valueToDeserialize, sizeof(int64_t));
 
 	EXPECT_EQ(valueToSerialize, valueToDeserialize);
 
 }
 
-TEST_F(PerformanTest, TestWriteStreamSerializeInt64Value) {
+TEST_F(PerformanTest, TestStreamSerializeInt64Value) {
 	Performan::Allocator& allocator = Performan::GetDefaultAllocator();
 	Performan::WriteStream wStream(&allocator);
 
 	int64_t valueToSerialize = 12345789;
-	wStream.SerializeInt64(valueToSerialize);
+	PERFORMAN_SERIALIZE(wStream, &valueToSerialize, sizeof(int64_t));
 
 	int64_t valueToDeserialize = 0;
 	Performan::ReadStream rStream(&allocator, wStream.Data(), wStream.Size());
-	rStream.SerializeInt64(valueToDeserialize);
+	PERFORMAN_SERIALIZE(rStream, &valueToDeserialize, sizeof(int64_t));
 
 	EXPECT_EQ(valueToSerialize, valueToDeserialize);
+}
+
+TEST_F(PerformanTest, TestStreamSerializeEvent) {
+	Performan::Allocator& allocator = Performan::GetDefaultAllocator();
+	Performan::WriteStream wStream(&allocator);
+
+	Performan::Event evtSerialize("Test");
+    evtSerialize._start = std::chrono::steady_clock::now();
+    evtSerialize._end = std::chrono::steady_clock::now();
+	evtSerialize.Serialize(wStream);
+
+	Performan::Event evtDeserialize;
+	Performan::ReadStream rStream(&allocator, wStream.Data(), wStream.Size());
+	evtDeserialize.Serialize(rStream);
+
+	EXPECT_EQ(evtSerialize._start, evtDeserialize._start);
+	EXPECT_EQ(evtSerialize._end, evtDeserialize._end);
+	EXPECT_STREQ(evtSerialize._name, evtDeserialize._name);
 }

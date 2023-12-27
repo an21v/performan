@@ -64,8 +64,13 @@ struct SampleGame {
 };
 
 int main() {
+    Performan::Profiler::CreateInstance();
+
 	SampleGame game;
 
 	game.Initialize();
 	game.Run();
+    Performan::Profiler::GetInstance()->
+
+    Performan::Profiler::DestroyInstance();
 }

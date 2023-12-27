@@ -6,5 +6,5 @@ BUILD_DIR=$CURRENT_DIR/build
 pushd $CURRENT_DIR
 rm -rf $BUILD_DIR
 mkdir $BUILD_DIR
-cmake -B build
+cmake -B $BUILD_DIR
 popd
