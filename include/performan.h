@@ -14,7 +14,7 @@
 ////////////////////////////////// API //////////////////////////////////
 	
 #define PM_THREAD() Performan::SoftPtr<Performan::Thread> pmThread = Performan::Profiler::GetInstance()->AddThread();
-#define PM_SCOPED_FRAME() Performan::FrameScope pmFrameScope(*pmThread);
+#define PM_SCOPED_FRAME() Performan::FrameScope pmFrameScope(pmThread);
 #define PM_SCOPED_EVENT(name) Performan::EventScope pmEventScope(pmFrameScope._frame, name);
 
 namespace Performan {
@@ -131,7 +131,48 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 	};
 
 	struct Frame {
+		PortableTimePoint _start;
+		PortableTimePoint _end;
+		uint64_t _frameIdx = 0;
 		std::vector<Event> _events;
+
+		template <class Stream>
+		void Serialize(Stream& stream)
+		{
+			int64_t startCount = 0;
+			int64_t endCount = 0;
+			uint32_t eventsSize = 0;
+
+			if constexpr (Stream::IsWriting)
+			{
+				startCount = _start.time_since_epoch().count();
+				endCount = _end.time_since_epoch().count();
+				eventsSize = _events.size();
+			}
+
+			PERFORMAN_SERIALIZE(stream, &startCount, sizeof(int64_t));
+			PERFORMAN_SERIALIZE(stream, &endCount, sizeof(int64_t));
+			PERFORMAN_SERIALIZE(stream, &_frameIdx, sizeof(uint64_t));
+			PERFORMAN_SERIALIZE(stream, &eventsSize, sizeof(uint32_t));
+
+			if constexpr (Stream::IsReading)
+			{
+				_events.resize(eventsSize);
+			}
+
+			for (uint32_t index = 0; index < eventsSize; index++)
+			{
+				_events[index].Serialize(stream);
+			}
+
+			if constexpr (Stream::IsReading)
+			{
+				PortableNano startDuration(startCount);
+				PortableNano endDuration(endCount);
+				_start = PortableTimePoint(startDuration);
+				_end = PortableTimePoint(endDuration);
+			}
+		}
 	};
 
 	struct Thread {
@@ -140,6 +181,13 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 	
 	struct EventScope {
 		EventScope(Frame& frame, const char* name)
+			: _frame(&frame)
+			, _event(name)
+		{
+			_event._start = std::chrono::steady_clock::now();
+		}
+
+		EventScope(SoftPtr<Frame> frame, const char* name)
 			: _frame(frame)
 			, _event(name)
 		{
@@ -148,15 +196,15 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 
 		~EventScope() {
 			_event._end = std::chrono::steady_clock::now();
-			_frame.get()._events.push_back(std::move(_event));
+			_frame->_events.push_back(std::move(_event));
 		}
 
-		std::reference_wrapper<Frame> _frame;
+		SoftPtr<Frame> _frame;
 		Event _event;
 	};
 
 	struct FrameScope {
-		FrameScope(Thread& thread)
+		FrameScope(SoftPtr<Thread> thread)
 			:_thread(thread)
 		{
 			// init frame start
@@ -164,10 +212,10 @@ static void PerformanDefaultAssertHandler(const char* condition, const char* fun
 
 		~FrameScope()
 		{
-			_thread.get()._frames.push_back(_frame);
+			_thread->_frames.push_back(_frame);
 		}
 
-		std::reference_wrapper<Thread> _thread;
+		SoftPtr<Thread> _thread;
 		Frame _frame;
 	};
 

@@ -138,3 +138,47 @@ TEST_F(PerformanTest, TestStreamSerializeEvent) {
 	EXPECT_EQ(evtSerialize._end, evtDeserialize._end);
 	EXPECT_STREQ(evtSerialize._name, evtDeserialize._name);
 }
+
+TEST_F(PerformanTest, TestStreamSerializeFrameNoEvents) {
+	Performan::Allocator& allocator = Performan::GetDefaultAllocator();
+	Performan::WriteStream wStream(&allocator);
+
+	Performan::Frame frameSerialize;
+	frameSerialize._start = std::chrono::steady_clock::now();
+	frameSerialize._end = std::chrono::steady_clock::now();
+	frameSerialize.Serialize(wStream);
+
+	Performan::Frame frameDeserialize;
+	Performan::ReadStream rStream(&allocator, wStream.Data(), wStream.Size());
+	frameDeserialize.Serialize(rStream);
+
+	EXPECT_EQ(frameSerialize._start, frameDeserialize._start);
+	EXPECT_EQ(frameSerialize._end, frameDeserialize._end);
+	EXPECT_EQ(frameSerialize._events.size(), frameDeserialize._events.size());
+}
+
+TEST_F(PerformanTest, TestStreamSerializeFrame) {
+	Performan::Allocator& allocator = Performan::GetDefaultAllocator();
+	Performan::WriteStream wStream(&allocator);
+
+	Performan::Frame frameSerialize;
+	frameSerialize._start = std::chrono::steady_clock::now();
+	frameSerialize._end = std::chrono::steady_clock::now();
+
+	Performan::Event evtSerialize;
+	evtSerialize._start = std::chrono::steady_clock::now();
+	evtSerialize._end = std::chrono::steady_clock::now();
+	evtSerialize._name = "Allo";
+
+	frameSerialize._events.push_back(evtSerialize);
+
+	frameSerialize.Serialize(wStream);
+
+	Performan::Frame frameDeserialize;
+	Performan::ReadStream rStream(&allocator, wStream.Data(), wStream.Size());
+	frameDeserialize.Serialize(rStream);
+
+	EXPECT_EQ(frameSerialize._start, frameDeserialize._start);
+	EXPECT_EQ(frameSerialize._end, frameDeserialize._end);
+	EXPECT_EQ(frameSerialize._events.size(), frameDeserialize._events.size());
+}
