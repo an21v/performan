@@ -1,8 +1,9 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <mutex>
+#include <fstream>
 #include <iostream>
+#include <mutex>
 #include <thread>
 
 #include "performan.h"
@@ -65,6 +66,10 @@ struct SampleGame {
 int main() {
     Performan::Profiler::CreateInstance();
     Performan::Profiler::GetInstance()->SetAllocator(&Performan::GetDefaultAllocator());
+    Performan::Profiler::GetInstance()->SetSaveCallback([](uint8_t* buffer, uint32_t size) {
+        std::basic_ofstream<uint8_t> file("capture.pfm");
+        file.write(buffer, size);
+    });
 
     PM_THREAD("MainThread");
 
@@ -77,5 +82,6 @@ int main() {
     
     game.Run();
 
+    Performan::Profiler::GetInstance()->StopCapture();
     Performan::Profiler::DestroyInstance();
 }

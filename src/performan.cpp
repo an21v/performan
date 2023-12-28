@@ -65,6 +65,27 @@ namespace Performan {
         _allocator = allocator;
     }
 
+    void Profiler::StopCapture()
+    {
+        WriteStream wStream(_allocator);
+
+        if (_saveFct == nullptr)
+        {
+            return;
+        }
+
+        {
+            std::scoped_lock lock(_threadsMtx);
+            for (SoftPtr<Thread> thread : _threads)
+            {
+                thread->Serialize(wStream);
+            }
+        }
+
+        uint32_t size = static_cast<uint32_t>(wStream.Offset());
+        _saveFct(wStream.Data(), size);
+    }
+
     Allocator* Profiler::GetAllocator() const
     {
         if (_allocator) {

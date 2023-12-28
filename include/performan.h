@@ -158,6 +158,8 @@ do                                                                             \
         Frame _frame;
     };
 
+    using SaveFunction = std::function<void(uint8_t*, uint32_t)>;
+
     class Profiler {
     public:
         // Singleton
@@ -172,6 +174,11 @@ do                                                                             \
         SoftPtr<Thread> AddThread(const char* name);
         void RemoveThread(SoftPtr<Thread> thread);
 
+        void SetSaveCallback(SaveFunction fct) { _saveFct = fct; }
+
+        void StartCapture() {}
+        void StopCapture();
+
     private:
         Profiler() = default;
         ~Profiler();
@@ -181,6 +188,8 @@ do                                                                             \
     private:
         std::vector<Thread*> _threads;
         mutable std::mutex _threadsMtx;
+
+        SaveFunction _saveFct;
 
         Allocator* _allocator = nullptr;
 
