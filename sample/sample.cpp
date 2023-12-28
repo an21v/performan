@@ -15,7 +15,7 @@ struct SampleGame {
 
     void Run() {
         auto t = std::thread([this]() {
-            PM_THREAD();
+            PM_THREAD("SimulationThread");
             bool run = _running.load();
             int count = 0;
 
@@ -66,9 +66,15 @@ int main() {
     Performan::Profiler::CreateInstance();
     Performan::Profiler::GetInstance()->SetAllocator(&Performan::GetDefaultAllocator());
 
+    PM_THREAD("MainThread");
+
     SampleGame game;
 
-    game.Initialize();
+    {
+        PM_SCOPED_EVENT("Initialization");
+        game.Initialize();
+    }
+    
     game.Run();
 
     Performan::Profiler::DestroyInstance();

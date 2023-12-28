@@ -74,10 +74,10 @@ namespace Performan {
         return &(GetDefaultAllocator());
     }
 
-    SoftPtr<Thread> Profiler::AddThread()
+    SoftPtr<Thread> Profiler::AddThread(const char* name)
     {
         // Dynamically allocate thread
-        Thread* th = PERFORMAN_NEW(*_allocator, Thread);
+        Thread* th = PERFORMAN_NEW(*_allocator, Thread, name);
 
         {
             std::scoped_lock lock(_threadsMtx);

@@ -13,9 +13,9 @@
 
 ////////////////////////////////// API //////////////////////////////////
 
-#define PM_THREAD() Performan::SoftPtr<Performan::Thread> pmThread = Performan::Profiler::GetInstance()->AddThread();
+#define PM_THREAD(name) Performan::SoftPtr<Performan::Thread> pmThread = Performan::Profiler::GetInstance()->AddThread(name);
 #define PM_SCOPED_FRAME() Performan::FrameScope pmFrameScope(pmThread);
-#define PM_SCOPED_EVENT(name) Performan::EventScope pmEventScope(pmFrameScope._frame, name);
+#define PM_SCOPED_EVENT(name) Performan::EventScope pmEventScope(pmThread, name);
 
 namespace Performan {
 
@@ -86,109 +86,47 @@ do                                                                             \
         Event(const char* name)
             : _name(name) {}
 
-        const char* _name;
+        const char* _name = nullptr;
         PortableTimePoint _start;
         PortableTimePoint _end;
 
         template <class Stream>
-        void Serialize(Stream& stream)
-        {
-            int64_t startCount = 0;
-            int64_t endCount = 0;
-            int32_t nameLength = 0;
-            char* name = nullptr;
-
-            if constexpr (Stream::IsWriting)
-            {
-                startCount = _start.time_since_epoch().count();
-                endCount = _end.time_since_epoch().count();
-                nameLength = strlen(_name);
-                nameLength += 1;
-                name = const_cast<char*>(_name);
-            }
-
-            PERFORMAN_SERIALIZE(stream, &startCount, sizeof(int64_t));
-            PERFORMAN_SERIALIZE(stream, &endCount, sizeof(int64_t));
-            PERFORMAN_SERIALIZE(stream, &nameLength, sizeof(int32_t));
-
-            if constexpr (Stream::IsReading)
-            {
-                PortableNano startDuration(startCount);
-                PortableNano endDuration(endCount);
-                _start = PortableTimePoint(startDuration);
-                _end = PortableTimePoint(endDuration);
-                name = new char[nameLength];
-                name[nameLength - 1] = '\0';
-            }
-
-            PERFORMAN_SERIALIZE(stream, name, nameLength);
-
-            if constexpr (Stream::IsReading)
-            {
-                _name = name;
-            }
-        }
+        void Serialize(Stream& stream);
     };
 
     struct Frame {
         PortableTimePoint _start;
         PortableTimePoint _end;
         uint64_t _frameIdx = 0;
-        std::vector<Event> _events;
 
         template <class Stream>
-        void Serialize(Stream& stream)
-        {
-            int64_t startCount = 0;
-            int64_t endCount = 0;
-            uint32_t eventsSize = 0;
-
-            if constexpr (Stream::IsWriting)
-            {
-                startCount = _start.time_since_epoch().count();
-                endCount = _end.time_since_epoch().count();
-                eventsSize = _events.size();
-            }
-
-            PERFORMAN_SERIALIZE(stream, &startCount, sizeof(int64_t));
-            PERFORMAN_SERIALIZE(stream, &endCount, sizeof(int64_t));
-            PERFORMAN_SERIALIZE(stream, &_frameIdx, sizeof(uint64_t));
-            PERFORMAN_SERIALIZE(stream, &eventsSize, sizeof(uint32_t));
-
-            if constexpr (Stream::IsReading)
-            {
-                _events.resize(eventsSize);
-            }
-
-            for (uint32_t index = 0; index < eventsSize; index++)
-            {
-                _events[index].Serialize(stream);
-            }
-
-            if constexpr (Stream::IsReading)
-            {
-                PortableNano startDuration(startCount);
-                PortableNano endDuration(endCount);
-                _start = PortableTimePoint(startDuration);
-                _end = PortableTimePoint(endDuration);
-            }
-        }
+        void Serialize(Stream& stream);
     };
 
     struct Thread {
+
+        Thread() = default;
+        Thread(const char* name)
+            : _name(name) {}
+
+        const char* _name = nullptr;
         std::vector<Frame> _frames;
+        std::vector<Event> _events;
+
+        template <class Stream>
+        void Serialize(Stream& stream);
     };
 
     struct EventScope {
-        EventScope(Frame& frame, const char* name)
-            : _frame(&frame)
+        EventScope(Thread& thread, const char* name)
+            : _thread(&thread)
             , _event(name)
         {
             _event._start = std::chrono::steady_clock::now();
         }
 
-        EventScope(SoftPtr<Frame> frame, const char* name)
-            : _frame(frame)
+        EventScope(SoftPtr<Thread> frame, const char* name)
+            : _thread(frame)
             , _event(name)
         {
             _event._start = std::chrono::steady_clock::now();
@@ -196,10 +134,10 @@ do                                                                             \
 
         ~EventScope() {
             _event._end = std::chrono::steady_clock::now();
-            _frame->_events.push_back(std::move(_event));
+            _thread->_events.push_back(std::move(_event));
         }
 
-        SoftPtr<Frame> _frame;
+        SoftPtr<Thread> _thread;
         Event _event;
     };
 
@@ -207,11 +145,12 @@ do                                                                             \
         FrameScope(SoftPtr<Thread> thread)
             :_thread(thread)
         {
-            // init frame start
+            _frame._start = std::chrono::steady_clock::now();
         }
 
         ~FrameScope()
         {
+            _frame._end = std::chrono::steady_clock::now();
             _thread->_frames.push_back(_frame);
         }
 
@@ -230,7 +169,7 @@ do                                                                             \
         void SetAllocator(Allocator* allocator);
         Allocator* GetAllocator() const;
 
-        SoftPtr<Thread> AddThread();
+        SoftPtr<Thread> AddThread(const char* name);
         void RemoveThread(SoftPtr<Thread> thread);
 
     private:
@@ -249,6 +188,12 @@ do                                                                             \
     };
 
     ////////////////////////////////// Serialization //////////////////////////////////
+
+    template <class Stream>
+    void Serialize(Stream& stream, const char*& value);
+
+    template <class Stream, class T>
+    void SerializeVector(Stream& stream, std::vector<T>& values);
 
     class Stream {
     public:
@@ -305,6 +250,116 @@ do                                                                             \
 
         void SerializeBytes(void* value, size_t size);
     };
+
+    template<class Stream>
+    inline void Thread::Serialize(Stream& stream)
+    {
+        Performan::Serialize(stream, _name);
+        Performan::SerializeVector(stream, _events);
+        Performan::SerializeVector(stream, _frames);
+    }
+
+    template<class Stream>
+    inline void Frame::Serialize(Stream& stream)
+    {
+        int64_t startCount = 0;
+        int64_t endCount = 0;
+
+        if constexpr (Stream::IsWriting)
+        {
+            startCount = _start.time_since_epoch().count();
+            endCount = _end.time_since_epoch().count();
+        }
+
+        PERFORMAN_SERIALIZE(stream, &startCount, sizeof(int64_t));
+        PERFORMAN_SERIALIZE(stream, &endCount, sizeof(int64_t));
+        PERFORMAN_SERIALIZE(stream, &_frameIdx, sizeof(uint64_t));
+
+        if constexpr (Stream::IsReading)
+        {
+            PortableNano startDuration(startCount);
+            PortableNano endDuration(endCount);
+            _start = PortableTimePoint(startDuration);
+            _end = PortableTimePoint(endDuration);
+        }
+    }
+
+    template<class Stream>
+    inline void Event::Serialize(Stream& stream)
+    {
+        int64_t startCount = 0;
+        int64_t endCount = 0;
+
+        if constexpr (Stream::IsWriting)
+        {
+            startCount = _start.time_since_epoch().count();
+            endCount = _end.time_since_epoch().count();
+        }
+
+        PERFORMAN_SERIALIZE(stream, &startCount, sizeof(int64_t));
+        PERFORMAN_SERIALIZE(stream, &endCount, sizeof(int64_t));
+        Performan::Serialize(stream, _name);
+
+        if constexpr (Stream::IsReading)
+        {
+            PortableNano startDuration(startCount);
+            PortableNano endDuration(endCount);
+            _start = PortableTimePoint(startDuration);
+            _end = PortableTimePoint(endDuration);
+        }
+    }
+
+    template<class Stream>
+    inline void Serialize(Stream& stream, const char*& value)
+    {
+        char*& tempValue = const_cast<char*&>(value);
+        uint32_t valueLength = 0;
+
+        if constexpr (Stream::IsWriting)
+        {
+            if (value != nullptr) {
+                valueLength = static_cast<uint32_t>(strlen(value));
+                valueLength += 1;
+            }
+        }
+
+        PERFORMAN_SERIALIZE(stream, &valueLength, sizeof(uint32_t));
+
+        if (valueLength == 0) {
+            return;
+        }
+
+        if constexpr (Stream::IsReading)
+        {
+            tempValue = new char[valueLength];
+            tempValue[valueLength - 1] = '\0';
+        }
+
+        PERFORMAN_SERIALIZE(stream, tempValue, valueLength);
+    }
+
+    template<class Stream, class T>
+    inline void SerializeVector(Stream& stream, std::vector<T>& values) {
+        PERFORMAN_ASSERT(values.size() < UINT32_MAX);
+        uint32_t size = 0;
+
+        if constexpr (Stream::IsWriting)
+        {
+            size = static_cast<uint32_t>(values.size());
+        }
+
+        PERFORMAN_SERIALIZE(stream, &size, sizeof(uint32_t));
+
+        if constexpr (Stream::IsReading)
+        {
+            values.resize(size);
+        }
+
+        for (uint32_t index = 0; index < size; index++)
+        {
+            values[index].Serialize(stream);
+        }
+    }
 }
 
 #endif // PERFORMAN_H
