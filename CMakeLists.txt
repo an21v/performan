@@ -14,8 +14,6 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-include_directories(${PERFORMAN_INCLUDE_DIR})
-
 add_subdirectory(src)
 add_subdirectory(test)
 add_subdirectory(sample)
